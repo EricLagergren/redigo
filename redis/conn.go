@@ -547,6 +547,9 @@ func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 			if e != nil {
 				return nil, c.fatal(e)
 			}
+			if e, ok := r.(Error); ok {
+				return nil, c.fatal(e)
+			}
 			reply[i] = r
 		}
 		return reply, nil
