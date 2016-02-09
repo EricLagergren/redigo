@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/garyburd/redigo/redis"
+	"github.com/EricLagergren/redigo/redis"
 )
 
 func ExampleScript(c redis.Conn, reply interface{}, err error) {
