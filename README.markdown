@@ -39,9 +39,7 @@ Related Projects
 Contributing
 ------------
 
-Gary is looking for someone to take over maintenance of this project. If you are interested, contact Gary at the email address listed on his GitHub profile page.
-
-PRs for major features will not be accepted until a new maintainer is found.  Bug reports and PRs for bug fixes are welcome.
+TBD
 
 License
 -------

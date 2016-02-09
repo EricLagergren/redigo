@@ -299,7 +299,7 @@ func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *st
 				for i := 0; i < len(ss.l); i++ {
 					if fs.name != ss.l[i].name {
 						ss.l[j] = ss.l[i]
-						j += 1
+						j++
 					}
 				}
 				ss.l = ss.l[:j]
@@ -316,9 +316,8 @@ func compileStructSpec(t reflect.Type, depth map[string]int, index []int, ss *st
 }
 
 var (
-	structSpecMutex  sync.RWMutex
-	structSpecCache  = make(map[reflect.Type]*structSpec)
-	defaultFieldSpec = &fieldSpec{}
+	structSpecMutex sync.RWMutex
+	structSpecCache = make(map[reflect.Type]*structSpec)
 )
 
 func structSpecForType(t reflect.Type) *structSpec {

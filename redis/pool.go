@@ -35,10 +35,7 @@ var nowFunc = time.Now // for testing
 // pool has been reached.
 var ErrPoolExhausted = errors.New("redigo: connection pool exhausted")
 
-var (
-	errPoolClosed = errors.New("redigo: connection pool closed")
-	errConnClosed = errors.New("redigo: connection closed")
-)
+var errConnClosed = errors.New("redigo: connection closed")
 
 // Pool maintains a pool of connections. The application calls the Get method
 // to get a connection from the pool and the connection's Close method to
@@ -186,7 +183,7 @@ func (p *Pool) Close() error {
 // release decrements the active count and signals waiters. The caller must
 // hold p.mu during the call.
 func (p *Pool) release() {
-	p.active -= 1
+	p.active--
 	if p.cond != nil {
 		p.cond.Signal()
 	}
@@ -249,7 +246,7 @@ func (p *Pool) get() (Conn, error) {
 
 		if p.MaxActive == 0 || p.active < p.MaxActive {
 			dial := p.Dial
-			p.active += 1
+			p.active++
 			p.mu.Unlock()
 			c, err := dial()
 			if err != nil {
@@ -310,9 +307,9 @@ var (
 )
 
 func initSentinel() {
-	p := make([]byte, 64)
-	if _, err := rand.Read(p); err == nil {
-		sentinel = p
+	var p [64]byte
+	if _, err := rand.Read(p[:]); err == nil {
+		sentinel = p[:]
 	} else {
 		h := sha1.New()
 		io.WriteString(h, "Oops, rand failed. Use time instead.")

@@ -53,6 +53,18 @@ type conn struct {
 	numScratch [40]byte
 }
 
+func (c *conn) adjustReadDeadline() {
+	if c.readTimeout != 0 {
+		c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
+	}
+}
+
+func (c *conn) adjustWriteDeadline() {
+	if c.writeTimeout != 0 {
+		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
+	}
+}
+
 // DialTimeout acts like Dial but takes timeouts for establishing the
 // connection to the server, writing a command and reading a reply.
 //
@@ -137,7 +149,7 @@ func Dial(network, address string, options ...DialOption) (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &conn{
+	c := conn{
 		conn:         netConn,
 		bw:           bufio.NewWriter(netConn),
 		br:           bufio.NewReader(netConn),
@@ -159,7 +171,7 @@ func Dial(network, address string, options ...DialOption) (Conn, error) {
 		}
 	}
 
-	return c, nil
+	return &c, nil
 }
 
 var pathDBRegexp = regexp.MustCompile(`/(\d+)\z`)
@@ -260,8 +272,8 @@ func (c *conn) writeLen(prefix byte, n int) error {
 	i := len(c.lenScratch) - 3
 	for {
 		c.lenScratch[i] = byte('0' + n%10)
-		i -= 1
-		n = n / 10
+		i--
+		n /= 10
 		if n == 0 {
 			break
 		}
@@ -331,7 +343,7 @@ func (c *conn) writeCommand(cmd string, args []interface{}) (err error) {
 type protocolError string
 
 func (pe protocolError) Error() string {
-	return fmt.Sprintf("redigo: %s (possible server error or unsupported concurrent read by application)", string(pe))
+	return fmt.Sprintf("redigo: %s (possible server error or unsupported concurrent read by application)", pe)
 }
 
 func (c *conn) readLine() ([]byte, error) {
@@ -373,7 +385,7 @@ func parseLen(p []byte) (int, error) {
 }
 
 // parseInt parses an integer reply.
-func parseInt(p []byte) (interface{}, error) {
+func parseInt(p []byte) (int64, error) {
 	if len(p) == 0 {
 		return 0, protocolError("malformed integer")
 	}
@@ -402,9 +414,9 @@ func parseInt(p []byte) (interface{}, error) {
 	return n, nil
 }
 
-var (
-	okReply   interface{} = "OK"
-	pongReply interface{} = "PONG"
+const (
+	okReply   = "OK"
+	pongReply = "PONG"
 )
 
 func (c *conn) readReply() (interface{}, error) {
@@ -466,11 +478,9 @@ func (c *conn) readReply() (interface{}, error) {
 
 func (c *conn) Send(cmd string, args ...interface{}) error {
 	c.mu.Lock()
-	c.pending += 1
+	c.pending++
 	c.mu.Unlock()
-	if c.writeTimeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-	}
+	c.adjustWriteDeadline()
 	if err := c.writeCommand(cmd, args); err != nil {
 		return c.fatal(err)
 	}
@@ -478,9 +488,7 @@ func (c *conn) Send(cmd string, args ...interface{}) error {
 }
 
 func (c *conn) Flush() error {
-	if c.writeTimeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-	}
+	c.adjustWriteDeadline()
 	if err := c.bw.Flush(); err != nil {
 		return c.fatal(err)
 	}
@@ -488,9 +496,7 @@ func (c *conn) Flush() error {
 }
 
 func (c *conn) Receive() (reply interface{}, err error) {
-	if c.readTimeout != 0 {
-		c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
-	}
+	c.adjustReadDeadline()
 	if reply, err = c.readReply(); err != nil {
 		return nil, c.fatal(err)
 	}
@@ -503,7 +509,7 @@ func (c *conn) Receive() (reply interface{}, err error) {
 	// case where Receive is called before Send.
 	c.mu.Lock()
 	if c.pending > 0 {
-		c.pending -= 1
+		c.pending--
 	}
 	c.mu.Unlock()
 	if err, ok := reply.(Error); ok {
@@ -512,7 +518,7 @@ func (c *conn) Receive() (reply interface{}, err error) {
 	return
 }
 
-func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
+func (c *conn) Do(cmd string, args ...interface{}) (reply interface{}, err error) {
 	c.mu.Lock()
 	pending := c.pending
 	c.pending = 0
@@ -522,9 +528,7 @@ func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 		return nil, nil
 	}
 
-	if c.writeTimeout != 0 {
-		c.conn.SetWriteDeadline(time.Now().Add(c.writeTimeout))
-	}
+	c.adjustWriteDeadline()
 
 	if cmd != "" {
 		if err := c.writeCommand(cmd, args); err != nil {
@@ -536,9 +540,7 @@ func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 		return nil, c.fatal(err)
 	}
 
-	if c.readTimeout != 0 {
-		c.conn.SetReadDeadline(time.Now().Add(c.readTimeout))
-	}
+	c.adjustReadDeadline()
 
 	if cmd == "" {
 		reply := make([]interface{}, pending)
@@ -555,8 +557,6 @@ func (c *conn) Do(cmd string, args ...interface{}) (interface{}, error) {
 		return reply, nil
 	}
 
-	var err error
-	var reply interface{}
 	for i := 0; i <= pending; i++ {
 		var e error
 		if reply, e = c.readReply(); e != nil {
